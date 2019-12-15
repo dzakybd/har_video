@@ -29,7 +29,7 @@ from keras.callbacks import CSVLogger
 
 """## Experiment scenario & parameter"""
 
-scenario = 1 # 1 (3D-CNN) / 2 (C-RNN) / 3 (Pose-RNN)
+scenario = 2 # 1 (3D-CNN) / 2 (C-RNN) / 3 (Pose-RNN)
 
 image_scale = 1
 frame_sequences = 20
@@ -41,8 +41,15 @@ test_size = 0.2
 original_height = 120
 original_width = 160
 channel = 1
+resize_scale = 1
+frame_widht = int(original_width * resize_scale)
+frame_height = int(original_height * resize_scale)
+
+print("Frame size", frame_height, frame_widht)
 
 """## Load dataset"""
+
+print("Load dataset")
 
 # menampung seluruh dataset dan label
 dataset_raw = []
@@ -69,7 +76,9 @@ for idx, action in enumerate(actions):
                 # membaca video frame by frame
                 ret, frame = cap.read()
                 if ret:
-                    # meresize frame
+                    # resize frame
+                    frame = cv2.resize(frame, (frame_widht, frame_height))
+                    # convert to one channel
                     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                     frames.append(frame)
                     if cv2.waitKey(fps2) & 0xFF == ord('q'):
@@ -83,13 +92,16 @@ for idx, action in enumerate(actions):
             labels_raw.append(idx)
 
 
+
 """## Preprocessing"""
+print("Preprocessing")
 
 """### Generate image sequences (for 3D-CNN and C-RNN)"""
 dataset = []
 labels = []
 
 if scenario == 1 or scenario == 2:
+    print("Generate image sequences (for 3D-CNN and C-RNN)")
     for i, frames in enumerate(dataset_raw):
       tempframe = []
       action = labels_raw[i]
@@ -109,6 +121,12 @@ if scenario == 1 or scenario == 2:
 elif scenario == 3:
     pass
 
+dataset = np.expand_dims(dataset, axis=-1)
+labels = np_utils.to_categorical(labels, len(actions))
+
+print("dataset shape", np.shape(dataset))
+print("label shape", np.shape(labels))
+
 """## Model architecture"""
 
 """### 3D-CNN"""
@@ -122,7 +140,9 @@ def c3d_model():
     With thanks:
         https://gist.github.com/albertomontesg/d8b21a179c1e6cca0480ebdf292c34d2
     """
-    input_shape = (frame_sequences, original_height, original_width, channel)
+    input_shape = (frame_sequences, frame_height, frame_widht, channel)
+
+    print("Input shape", input_shape)
 
     model = Sequential()
 
@@ -196,7 +216,8 @@ def crnn_model():
     initialiser = 'glorot_uniform'
     reg_lambda = 0.001
 
-    input_shape = (frame_sequences, original_height, original_width, channel)
+    input_shape = (frame_sequences, frame_height, frame_widht, channel)
+    print("Input shape", input_shape)
 
 
     model = Sequential()
@@ -265,14 +286,15 @@ def visualize(hist, nb_epoch):
 
 
 """## Model training & validation"""
-
+print("Model training & validation")
 train_x, test_x, train_y, test_y = train_test_split(dataset, labels, test_size=test_size, random_state=random_state)
 
+print("train_x, test_x, train_y, test_y", np.shape(train_x), np.shape(test_x), np.shape(train_y), np.shape(test_y))
 if scenario == 1:
     model = c3d_model()
 elif scenario == 2:
     model = crnn_model()
-elif scenario == 3:
+else:
     model = posernn_model()
 
 
@@ -280,7 +302,7 @@ model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accur
 
 with open('summary-{}.txt'.format(scenario), 'w') as fh:
     model.summary(print_fn=lambda x: fh.write(x + '\n'))
-plot_model(model, to_file='plot_model-{}.txt'.format(scenario), show_shapes=True, show_layer_names=True)
+plot_model(model, to_file='plot_model-{}.png'.format(scenario), show_shapes=True, show_layer_names=True)
 
 start = datetime.datetime.now()
 # melakukan proses training
