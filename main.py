@@ -9,104 +9,83 @@ Original file is located at
 ## Load libraries
 """
 
-from keras.models import Sequential
-from keras.layers.core import Dense, Flatten, Dropout
+from keras.utils import np_utils
+import datetime
+import matplotlib.pyplot as plt
+from keras import regularizers
+from keras.callbacks import CSVLogger
+from keras.layers import TimeDistributed, Activation, BatchNormalization
 from keras.layers.convolutional import Convolution3D, MaxPooling3D, ZeroPadding3D, MaxPooling2D, Conv2D
+from keras.layers.core import Dense, Flatten, Dropout
 from keras.layers.recurrent import LSTM
-from keras.layers import TimeDistributed, Activation, BatchNormalization, regularizers
+from keras.models import Sequential
+from keras.utils.vis_utils import plot_model
+from sklearn.model_selection import train_test_split
+from parameters import *
 import os
 import cv2
-import datetime
 import numpy as np
-from sklearn.model_selection import train_test_split
-from keras.utils.vis_utils import plot_model
-from sklearn.metrics import classification_report, accuracy_score
-from keras.utils import np_utils
-import matplotlib.pyplot as plt
-from keras import optimizers
-from keras.callbacks import CSVLogger
 
-
-"""## Experiment scenario & parameter"""
-
-scenario = 2 # 1 (3D-CNN) / 2 (C-RNN) / 3 (Pose-RNN)
-
-image_scale = 1
-frame_sequences = 20
-actions = ['walking', 'handwaving', 'boxing']
-random_state = 1
-batch_size = 10
-number_epoch = 20
-test_size = 0.2
-original_height = 120
-original_width = 160
-channel = 1
-resize_scale = 1
-frame_widht = int(original_width * resize_scale)
-frame_height = int(original_height * resize_scale)
-
-print("Frame size", frame_height, frame_widht)
+print("Scenario", scenario)
 
 """## Load dataset"""
 
 print("Load dataset")
 
-# menampung seluruh dataset dan label
-dataset_raw = []
-labels_raw = []
-
-for idx, action in enumerate(actions):
-    path_dir = 'dataset/{}'.format(action)
-    vids = os.listdir(path_dir)
-    
-    # iterates over all data automatically
-    for vid in vids:
-        if vid.endswith(".avi"):
-            path_file = '{}/{}'.format(path_dir, vid)
-            print(path_file)
-
-            frames = []
-            cap = cv2.VideoCapture(path_file)
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            # width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-            # height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-            fps2 = int(1000 / fps)
-
-            while True:
-                # membaca video frame by frame
-                ret, frame = cap.read()
-                if ret:
-                    # resize frame
-                    frame = cv2.resize(frame, (frame_widht, frame_height))
-                    # convert to one channel
-                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                    frames.append(frame)
-                    if cv2.waitKey(fps2) & 0xFF == ord('q'):
-                        break
-                else:
-                    break
-
-            cv2.destroyAllWindows()
-
-            dataset_raw.append(frames)
-            labels_raw.append(idx)
-
-
-
-"""## Preprocessing"""
-print("Preprocessing")
-
-"""### Generate image sequences (for 3D-CNN and C-RNN)"""
 dataset = []
 labels = []
 
-if scenario == 1 or scenario == 2:
+if scenario == 3:
+    dataset = np.load('dataset-{}'.format(scenario))
+    labels = np.load('labels-{}'.format(scenario))
+
+else:
+    dataset_raw = []
+    labels_raw = []
+
+    for idx, action in enumerate(actions):
+        path_dir = 'dataset/{}'.format(action)
+        vids = os.listdir(path_dir)
+
+        # iterates over all data automatically
+        for idx2, vid in enumerate(vids):
+            if vid.endswith(".avi"):
+                path_file = '{}/{}'.format(path_dir, vid)
+                print(path_file)
+
+                frames = []
+                cap = cv2.VideoCapture(path_file)
+
+                while True:
+                    # read video frame by frame
+                    ret, frame = cap.read()
+                    if ret:
+                        # resize frame
+                        frame = cv2.resize(frame, (frame_widht, frame_height))
+                        # convert to one channel
+                        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                        frames.append(frame)
+                    else:
+                        break
+
+                cv2.destroyAllWindows()
+                dataset_raw.append(frames)
+                labels_raw.append(idx)
+
+    print("Number of videos", len(dataset_raw))
+
+    """## Preprocessing"""
+
+    print("Preprocessing")
+
+    """### Generate image sequences (for 3D-CNN and C-RNN)"""
     print("Generate image sequences (for 3D-CNN and C-RNN)")
     for i, frames in enumerate(dataset_raw):
       tempframe = []
       action = labels_raw[i]
+      print("Preprocess {} {}".format(actions[action], i))
       for j in range(len(frames)):
-          # memotong frame2 menjadi sejumlah frame_depth
+          # split frame to be frame sequences
           if len(tempframe) < frame_sequences:
               tempframe.append(frames[j])
           elif len(tempframe) >= frame_sequences:
@@ -115,17 +94,11 @@ if scenario == 1 or scenario == 2:
               labels.append(action)
               del tempframe[:]
 
-
-# """### Extract pose features & generate pose sequences (for Pose-RNN)"""
-
-elif scenario == 3:
-    pass
-
-dataset = np.expand_dims(dataset, axis=-1)
-labels = np_utils.to_categorical(labels, len(actions))
+    dataset = np.expand_dims(dataset, axis=-1)
+    labels = np_utils.to_categorical(labels, len(actions))
 
 print("dataset shape", np.shape(dataset))
-print("label shape", np.shape(labels))
+print("labels shape", np.shape(labels))
 
 """## Model architecture"""
 
@@ -219,7 +192,6 @@ def crnn_model():
     input_shape = (frame_sequences, frame_height, frame_widht, channel)
     print("Input shape", input_shape)
 
-
     model = Sequential()
 
     # first (non-default) block
@@ -252,16 +224,10 @@ def crnn_model():
 
 # Pose Features - Recurrent Neural Network
 
-def posernn_model():
-    input_shape = (frame_sequences, channel)
+def posernn_model(timesteps):
     model = Sequential()
-    model.add(LSTM(2048, return_sequences=False,
-                   input_shape=input_shape,
-                   dropout=0.5))
-    model.add(Dense(512, activation='relu'))
-    model.add(Dropout(0.5))
+    model.add(LSTM(256, input_shape=(frame_sequences-time_lag, timesteps)))
     model.add(Dense(len(actions), activation='softmax'))
-
     return model
 
 
@@ -288,21 +254,27 @@ def visualize(hist, nb_epoch):
 """## Model training & validation"""
 print("Model training & validation")
 train_x, test_x, train_y, test_y = train_test_split(dataset, labels, test_size=test_size, random_state=random_state)
-
 print("train_x, test_x, train_y, test_y", np.shape(train_x), np.shape(test_x), np.shape(train_y), np.shape(test_y))
+
 if scenario == 1:
+    print("c3d_model")
     model = c3d_model()
 elif scenario == 2:
+    print("crnn_model")
     model = crnn_model()
 else:
-    model = posernn_model()
+    print("posernn_model")
+    _, data_dim, timesteps = np.shape(dataset)
+    model = posernn_model(timesteps)
 
 
-model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-
+print(model.summary())
 with open('summary-{}.txt'.format(scenario), 'w') as fh:
     model.summary(print_fn=lambda x: fh.write(x + '\n'))
+print("Save plot_model")
 plot_model(model, to_file='plot_model-{}.png'.format(scenario), show_shapes=True, show_layer_names=True)
+
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['acc'])
 
 start = datetime.datetime.now()
 # melakukan proses training
