@@ -276,7 +276,7 @@ model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['acc']
 
 start = datetime.datetime.now()
 # do the training
-hist = model.fit(train_x, train_y, validation_data=(test_x, test_y), callbacks=[CSVLogger('log-{}.csv'.format(scenario), separator=';')], batch_size=batch_size, epochs=number_epoch, verbose=1)
+hist = model.fit(train_x, train_y, validation_data=(test_x, test_y), callbacks=[CSVLogger('log-{}.csv'.format(scenario), separator=',')], batch_size=batch_size, epochs=number_epoch, verbose=1)
 end = datetime.datetime.now()
 interval = end - start
 f = open('info-{}.txt'.format(scenario), 'w')

@@ -1,6 +1,6 @@
 """## Experiment scenario & parameter"""
 
-scenario = 2 # 1 (3D-CNN) / 2 (C-RNN) / 3 (Pose-RNN)
+scenario = 1 # 1 (3D-CNN) / 2 (C-RNN) / 3 (Pose-RNN)
 
 frame_sequences = 20
 actions = ['walking', 'handwaving', 'boxing']
