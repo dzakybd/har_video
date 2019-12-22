@@ -62,7 +62,7 @@ else:
                     if ret:
                         # resize frame
                         frame = cv2.resize(frame, (frame_widht, frame_height))
-                        # convert to one channel
+                        # convert to one channel / grayscale
                         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                         frames.append(frame)
                     else:
@@ -85,7 +85,7 @@ else:
       action = labels_raw[i]
       print("Preprocess {} {}".format(actions[action], i))
       for j in range(len(frames)):
-          # split frame to be frame sequences
+          # split videos to be frame sequences
           if len(tempframe) < frame_sequences:
               tempframe.append(frames[j])
           elif len(tempframe) >= frame_sequences:
@@ -223,7 +223,6 @@ def crnn_model():
 """### Pose-RNN"""
 
 # Pose Features - Recurrent Neural Network
-
 def posernn_model(timesteps):
     model = Sequential()
     model.add(LSTM(256, input_shape=(frame_sequences-time_lag, timesteps)))
@@ -231,7 +230,6 @@ def posernn_model(timesteps):
     return model
 
 
-# fungsi induk dari create_plot, menentukan matrik apa saja yang akan di plot
 def visualize(hist, nb_epoch):
     def create_plot(hist, xc, title):
         a = hist.history[title]
@@ -267,7 +265,7 @@ else:
     _, data_dim, timesteps = np.shape(dataset)
     model = posernn_model(timesteps)
 
-
+# save the model arch and plot
 print(model.summary())
 with open('summary-{}.txt'.format(scenario), 'w') as fh:
     model.summary(print_fn=lambda x: fh.write(x + '\n'))
@@ -277,7 +275,7 @@ plot_model(model, to_file='plot_model-{}.png'.format(scenario), show_shapes=True
 model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['acc'])
 
 start = datetime.datetime.now()
-# melakukan proses training
+# do the training
 hist = model.fit(train_x, train_y, validation_data=(test_x, test_y), callbacks=[CSVLogger('log-{}.csv'.format(scenario), separator=';')], batch_size=batch_size, epochs=number_epoch, verbose=1)
 end = datetime.datetime.now()
 interval = end - start
@@ -286,8 +284,9 @@ info = '\nScenario : '.format(scenario)
 info += '\nProcess time: ' + str(interval)
 print(info)
 f.write(info)
+# visualize the loss and acc
 visualize(hist, number_epoch)
-# menyimpan model
+# save the model
 model.save('model-{}.hdf5'.format(scenario))
 
 """## Test on sample video"""

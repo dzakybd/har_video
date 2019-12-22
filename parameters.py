@@ -19,11 +19,11 @@ params = dict()
 params["model_folder"] = "C:/Users/HANSUNG/Downloads/openpose/models/"
 params["number_people_max"] = 1
 params["keypoint_scale"] = 3
-# params["net_resolution"] = "-1x300"
 params["model_pose"] = "BODY_25"
 
 
 if scenario == 1:
+    # it cannot use full scale because the system and the C3D model incapable to handle 160x120 resolution (out of memory)
     resize_scale = 1/3
 elif scenario == 2:
     resize_scale = 1
