@@ -1,10 +1,21 @@
+from keras.utils import np_utils
+import datetime
+import matplotlib.pyplot as plt
+from keras import regularizers
+from keras.callbacks import CSVLogger
+from keras.layers import TimeDistributed, Activation, BatchNormalization
+from keras.layers.convolutional import Convolution3D, MaxPooling3D, ZeroPadding3D, MaxPooling2D, Conv2D
+from keras.layers.core import Dense, Flatten, Dropout
+from keras.layers.recurrent import LSTM
+from keras.models import Sequential
+from keras.utils.vis_utils import plot_model
+from sklearn.model_selection import train_test_split
+from parameters import *
 import os
 import cv2
 import numpy as np
-import pandas as pd
 import pyopenpose as op
-from parameters import *
-from keras.utils import np_utils
+import pandas as pd
 
 print("Scenario", scenario)
 print("Frame size", frame_height, frame_widht)
@@ -31,8 +42,6 @@ for idx, action in enumerate(actions):
 
     # iterates over all data automatically
     for idx2, vid in enumerate(vids):
-        if idx2 == 4:
-            break
         if vid.endswith(".avi"):
             path_file = '{}/{}'.format(path_dir, vid)
             print(path_file)
@@ -106,5 +115,8 @@ labels = np_utils.to_categorical(labels, len(actions))
 print("Dataset shape", np.shape(dataset))
 print("Labels shape", np.shape(labels))
 
-np.save('dataset-{}.npy'.format(scenario), dataset)
-np.save('label-{}.npy'.format(scenario), labels)
+try:
+    np.save('dataset-{}.npy'.format(scenario), dataset)
+    np.save('labels-{}.npy'.format(scenario), labels)
+except:
+    print("waduhh")

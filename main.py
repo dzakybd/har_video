@@ -36,8 +36,8 @@ dataset = []
 labels = []
 
 if scenario == 3:
-    dataset = np.load('dataset-{}'.format(scenario))
-    labels = np.load('labels-{}'.format(scenario))
+    dataset = np.load('dataset-{}.npy'.format(scenario))
+    labels = np.load('labels-{}.npy'.format(scenario))
 
 else:
     dataset_raw = []
@@ -100,6 +100,197 @@ else:
 print("dataset shape", np.shape(dataset))
 print("labels shape", np.shape(labels))
 
+"""## Model architecture"""
+
+"""### 3D-CNN"""
+
+# 3D Convolutional Neural Network
+
+def c3d_model():
+    """
+    Build a 3D convolutional network, aka C3D.
+        https://arxiv.org/pdf/1412.0767.pdf
+    With thanks:
+        https://gist.github.com/albertomontesg/d8b21a179c1e6cca0480ebdf292c34d2
+    """
+    input_shape = (frame_sequences, frame_height, frame_widht, channel)
+
+    print("Input shape", input_shape)
+
+    model = Sequential()
+
+    # 1st layer group
+    model.add(Convolution3D(filters=64, kernel_size=(3, 3, 3), input_shape=input_shape, padding='same', strides=(1, 1, 1),
+                            activation='relu'))
+    model.add(MaxPooling3D(pool_size=(1, 2, 2), strides=(1, 2, 2)))
+
+    # 2nd layer group
+    model.add(Convolution3D(filters=128, kernel_size=(3, 3, 3), padding='same', strides=(1, 1, 1), activation='relu'))
+    model.add(MaxPooling3D(pool_size=(2, 2, 2), strides=(2, 2, 2)))
+
+    # 3rd layer group
+    model.add(Convolution3D(filters=256, kernel_size=(3, 3, 3), padding='same', strides=(1, 1, 1), activation='relu'))
+    model.add(Convolution3D(filters=256, kernel_size=(3, 3, 3), padding='same', strides=(1, 1, 1), activation='relu'))
+    model.add(MaxPooling3D(pool_size=(2, 2, 2), strides=(2, 2, 2)))
+
+    # 4th layer group
+    model.add(Convolution3D(filters=512, kernel_size=(3, 3, 3), padding='same', strides=(1, 1, 1), activation='relu'))
+    model.add(Convolution3D(filters=512, kernel_size=(3, 3, 3), padding='same', strides=(1, 1, 1), activation='relu'))
+    model.add(MaxPooling3D(pool_size=(2, 2, 2), strides=(2, 2, 2)))
+
+    # 5th layer group
+    model.add(Convolution3D(filters=512, kernel_size=(3, 3, 3), padding='same', strides=(1, 1, 1), activation='relu'))
+    model.add(Convolution3D(filters=512, kernel_size=(3, 3, 3), padding='same', strides=(1, 1, 1), activation='relu'))
+    model.add(ZeroPadding3D(padding=(0, 1, 1)))
+    model.add(MaxPooling3D(pool_size=(2, 2, 2), strides=(2, 2, 2)))
+    model.add(Flatten())
+
+    # FC layers group
+    model.add(Dense(units=4096, activation='relu'))
+    model.add(Dropout(rate=0.5))
+    model.add(Dense(units=4096, activation='relu'))
+    model.add(Dropout(rate=0.5))
+    model.add(Dense(units=len(actions), activation='softmax'))
+
+    return model
+
+"""### C-RNN"""
+
+# Convolutional - Recurrent Neural Network
+
+
+def crnn_model():
+    """Build a CNN into RNN.
+    Starting version from:
+        https://github.com/udacity/self-driving-car/blob/master/
+            steering-models/community-models/chauffeur/models.py
+    Heavily influenced by VGG-16:
+        https://arxiv.org/abs/1409.1556
+    Also known as an LRCN:
+        https://arxiv.org/pdf/1411.4389.pdf
+    """
+
+    def add_default_block(model, kernel_filters, init, reg_lambda):
+        # conv
+        model.add(TimeDistributed(Conv2D(kernel_filters, (3, 3), padding='same',
+                                         kernel_initializer=init, kernel_regularizer=regularizers.l2(reg_lambda))))
+        model.add(TimeDistributed(BatchNormalization()))
+        model.add(TimeDistributed(Activation('relu')))
+        # conv
+        model.add(TimeDistributed(Conv2D(kernel_filters, (3, 3), padding='same',
+                                         kernel_initializer=init, kernel_regularizer=regularizers.l2(reg_lambda))))
+        model.add(TimeDistributed(BatchNormalization()))
+        model.add(TimeDistributed(Activation('relu')))
+        # max pool
+        model.add(TimeDistributed(MaxPooling2D((2, 2), strides=(2, 2))))
+
+        return model
+
+    initialiser = 'glorot_uniform'
+    reg_lambda = 0.001
+
+    input_shape = (frame_sequences, frame_height, frame_widht, channel)
+    print("Input shape", input_shape)
+
+    model = Sequential()
+
+    # first (non-default) block
+    model.add(TimeDistributed(Conv2D(32, (7, 7), strides=(2, 2), padding='same',
+                                     kernel_initializer=initialiser, kernel_regularizer=regularizers.l2(reg_lambda)),
+                              input_shape=input_shape))
+    model.add(TimeDistributed(BatchNormalization()))
+    model.add(TimeDistributed(Activation('relu')))
+    model.add(
+        TimeDistributed(Conv2D(32, (3, 3), kernel_initializer=initialiser, kernel_regularizer=regularizers.l2(reg_lambda))))
+    model.add(TimeDistributed(BatchNormalization()))
+    model.add(TimeDistributed(Activation('relu')))
+    model.add(TimeDistributed(MaxPooling2D((2, 2), strides=(2, 2))))
+
+    # 2nd-5th (default) blocks
+    model = add_default_block(model, 64, init=initialiser, reg_lambda=reg_lambda)
+    model = add_default_block(model, 128, init=initialiser, reg_lambda=reg_lambda)
+    model = add_default_block(model, 256, init=initialiser, reg_lambda=reg_lambda)
+    model = add_default_block(model, 512, init=initialiser, reg_lambda=reg_lambda)
+
+    # LSTM output head
+    model.add(TimeDistributed(Flatten()))
+    model.add(LSTM(256, return_sequences=False, dropout=0.5))
+    model.add(Dense(len(actions), activation='softmax'))
+
+    return model
+
+
+"""### Pose-RNN"""
+
+# Pose Features - Recurrent Neural Network
+
+def posernn_model(timesteps):
+    model = Sequential()
+    model.add(LSTM(256, input_shape=(frame_sequences-time_lag, timesteps)))
+    model.add(Dense(len(actions), activation='softmax'))
+    return model
+
+
+# fungsi induk dari create_plot, menentukan matrik apa saja yang akan di plot
+def visualize(hist, nb_epoch):
+    def create_plot(hist, xc, title):
+        a = hist.history[title]
+        b = hist.history['val_' + title]
+        plt.figure()
+        plt.plot(xc, a)
+        plt.plot(xc, b)
+        plt.xlabel('epoch')
+        plt.ylabel(title)
+        plt.title('train_' + title + ' vs test_' + title)
+        plt.grid(True)
+        plt.legend(['train', 'test'])
+        plt.savefig('graph-{}-{}.png'.format(scenario, title))
+
+    xc = range(nb_epoch)
+    create_plot(hist, xc, 'loss')
+    create_plot(hist, xc, 'acc')
+
+
+"""## Model training & validation"""
+print("Model training & validation")
+train_x, test_x, train_y, test_y = train_test_split(dataset, labels, test_size=test_size, random_state=random_state)
+print("train_x, test_x, train_y, test_y", np.shape(train_x), np.shape(test_x), np.shape(train_y), np.shape(test_y))
+
+if scenario == 1:
+    print("c3d_model")
+    model = c3d_model()
+elif scenario == 2:
+    print("crnn_model")
+    model = crnn_model()
+else:
+    print("posernn_model")
+    _, data_dim, timesteps = np.shape(dataset)
+    model = posernn_model(timesteps)
+
+
+print(model.summary())
+with open('summary-{}.txt'.format(scenario), 'w') as fh:
+    model.summary(print_fn=lambda x: fh.write(x + '\n'))
+print("Save plot_model")
+plot_model(model, to_file='plot_model-{}.png'.format(scenario), show_shapes=True, show_layer_names=True)
+
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['acc'])
+
+start = datetime.datetime.now()
+# melakukan proses training
+hist = model.fit(train_x, train_y, validation_data=(test_x, test_y), callbacks=[CSVLogger('log-{}.csv'.format(scenario), separator=';')], batch_size=batch_size, epochs=number_epoch, verbose=1)
+end = datetime.datetime.now()
+interval = end - start
+f = open('info-{}.txt'.format(scenario), 'w')
+info = '\nScenario : '.format(scenario)
+info += '\nProcess time: ' + str(interval)
+print(info)
+f.write(info)
+visualize(hist, number_epoch)
+# menyimpan model
+model.save('model-{}.hdf5'.format(scenario))
+
+"""## Test on sample video"""
 """## Model architecture"""
 
 """### 3D-CNN"""
